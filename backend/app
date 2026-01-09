@@ -1,0 +1,307 @@
+
+
+from dotenv import load_dotenv
+load_dotenv()
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_cors import CORS
+from config import Config
+from models import db, User, Booking
+from datetime import datetime
+import bcrypt
+import os
+import math
+import secrets
+import smtplib
+from email.mime.text import MIMEText
+
+app = Flask(__name__)
+app.config.from_object(Config)
+db.init_app(app)
+CORS(app)
+
+
+EMAIL_ADDRESS = os.getenv('EMAIL_ADDRESS', 'aitravelagency50@gmail.com')  
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', 'tbkw ebox lknr eqzp')  
+
+
+with app.app_context():
+    db.create_all()
+
+# Helper function to hash passwords
+def hash_password(password):
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def check_password(password, password_hash):
+    return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
+
+
+def send_booking_email(email, token):
+    subject = "Your Booking Confirmation - Travel Agency"
+    body = f"Thank you for booking with Travel Agency!\n\nYour unique booking token is: {token}\nPlease keep this token for your records."
+    msg = MIMEText(body)
+    msg['Subject'] = subject
+    msg['From'] = EMAIL_ADDRESS
+    msg['To'] = email
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        return False
+
+# Signup Route
+@app.route('/signup', methods=['POST'])
+def signup():
+    data = request.form
+    name = data.get('name')
+    phone = data.get('phone')
+    email = data.get('email')
+    password = data.get('password')
+    profile_pic = request.files.get('profilePicture')
+
+    if User.query.filter_by(email=email).first():
+        return jsonify({'message': 'Email already exists'}), 400
+
+    profile_pic_path = 'static/uploads/default-avatar.png'
+    if profile_pic:
+        profile_pic_path = f'static/uploads/{email}_profile.jpg'
+        profile_pic.save(profile_pic_path)
+
+    new_user = User(
+        name=name,
+        phone=phone,
+        email=email,
+        password_hash=hash_password(password),
+        profile_pic=profile_pic_path
+    )
+    db.session.add(new_user)
+    db.session.commit()
+    return jsonify({'message': 'Signup successful! Please sign in.', 'user_id': new_user.id}), 201
+
+# Signin Route
+@app.route('/signin', methods=['POST'])
+def signin():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    user = User.query.filter_by(email=email).first()
+    if user and check_password(password, user.password_hash):
+        return jsonify({
+            'message': 'Sign-in successful!',
+            'user': {'id': user.id, 'name': user.name, 'email': user.email, 'profilePic': user.profile_pic}
+        }), 200
+    return jsonify({'message': 'Invalid credentials'}), 401
+
+# Edit Profile Route
+@app.route('/profile/edit', methods=['POST'])
+def edit_profile():
+    data = request.form
+    email = data.get('email')
+    user = User.query.filter_by(email=email).first()
+
+    if not user:
+        return jsonify({'message': 'User not found'}), 404
+
+    user.name = data.get('name', user.name)
+    user.phone = data.get('phone', user.phone)
+    profile_pic = request.files.get('profilePic')
+    if profile_pic:
+        profile_pic_path = f'static/uploads/{email}_profile.jpg'
+        profile_pic.save(profile_pic_path)
+        user.profile_pic = profile_pic_path
+
+    db.session.commit()
+    return jsonify({'message': 'Profile updated successfully', 'user': {
+        'id': user.id, 'name': user.name, 'email': user.email, 'profilePic': user.profile_pic
+    }}), 200
+
+# Reset Password Route
+@app.route('/forgot-password', methods=['POST'])
+def reset_password():
+    data = request.json
+    email = data.get('email')
+    new_password = data.get('newPassword')
+
+    user = User.query.filter_by(email=email).first()
+    if user:
+        user.password_hash = hash_password(new_password)
+        db.session.commit()
+        return jsonify({'message': 'Password reset successfully'}), 200
+    return jsonify({'message': 'Email not found'}), 404
+
+# Estimate Fare Route 
+@app.route('/estimate/<service_type>', methods=['POST'])
+def estimate_fare(service_type):
+    if service_type not in ['cab', 'bus', 'traveller', 'self-rental']:
+        return jsonify({'message': 'Invalid service type'}), 400
+
+    data = request.json
+    user_id = data.get('user_id')
+    if not User.query.get(user_id):
+        return jsonify({'message': 'User not found. Please sign in.'}), 401
+
+    pickup_location = data.get('pickup_location')
+    dropoff_location = data.get('dropoff_location')
+    pickup_date = data.get('pickup_date')
+    pickup_time = data.get('pickup_time')
+    dropoff_date = data.get('dropoff_date')
+    dropoff_time = data.get('dropoff_time')
+    passengers = data.get('passengers')
+    distance = data.get('distance')
+    vehicle_type = data.get('vehicle_type') if service_type == 'self-rental' else None
+
+    fare = calculate_fare(service_type, distance, passengers, pickup_date, pickup_time, dropoff_date, dropoff_time, vehicle_type)
+    if fare == 0:
+        return jsonify({'message': 'Invalid parameters for fare estimation'}), 400
+
+    return jsonify({
+        'fare': fare,
+        'recommendation': get_recommendation(service_type, passengers),
+        'booking_data': data
+    }), 200
+
+# Booking Route (Saves to database with token)
+@app.route('/book/<service_type>', methods=['POST'])
+def book_service(service_type):
+    if service_type not in ['cab', 'bus', 'traveller', 'self-rental']:
+        return jsonify({'message': 'Invalid service type'}), 400
+
+    data = request.json
+    user_id = data.get('user_id')
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'message': 'User not found. Please sign in.'}), 401
+
+    
+    name = data.get('name')
+    phone = data.get('phone')
+    email = data.get('email')
+    if not all([name, phone, email]):
+        return jsonify({'message': 'Name, phone, and email are required'}), 400
+
+    pickup_location = data.get('pickup_location')
+    dropoff_location = data.get('dropoff_location')
+    pickup_date = data.get('pickup_date')
+    pickup_time = data.get('pickup_time')
+    dropoff_date = data.get('dropoff_date')
+    dropoff_time = data.get('dropoff_time')
+    passengers = data.get('passengers')
+    distance = data.get('distance')
+    vehicle_type = data.get('vehicle_type') if service_type == 'self-rental' else None
+
+    fare = calculate_fare(service_type, distance, passengers, pickup_date, pickup_time, dropoff_date, dropoff_time, vehicle_type)
+    if fare == 0:
+        return jsonify({'message': 'Invalid booking parameters'}), 400
+
+    # Generate unique token
+    token = secrets.token_hex(8)  
+
+    new_booking = Booking(
+        user_id=user_id,
+        service_type=service_type,
+        pickup_location=pickup_location,
+        dropoff_location=dropoff_location,
+        pickup_date=pickup_date,
+        pickup_time=pickup_time,
+        dropoff_date=dropoff_date,
+        dropoff_time=dropoff_time,
+        passengers=passengers,
+        distance=distance,
+        vehicle_type=vehicle_type,
+        fare=fare,
+        status='Confirmed',
+        token=token  
+    )
+    db.session.add(new_booking)
+    db.session.commit()
+
+    # Send email with token
+    if send_booking_email(email, token):
+        return jsonify({
+            'message': 'Booking confirmed! Check your email for the token.',
+            'booking_id': new_booking.id,
+            'token': token,
+            'fare': fare,
+            'recommendation': get_recommendation(service_type, passengers)
+        }), 201
+    else:
+        return jsonify({'message': 'Booking saved, but failed to send email'}), 500
+
+# Fare Calculation Logic
+def calculate_fare(service_type, distance, passengers, pickup_date, pickup_time, dropoff_date, dropoff_time, vehicle_type):
+    try:
+        pickup = datetime.strptime(f"{pickup_date} {pickup_time}", '%Y-%m-%d %H:%M')
+        dropoff = datetime.strptime(f"{dropoff_date} {dropoff_time}", '%Y-%m-%d %H:%M')
+        duration = (dropoff - pickup).total_seconds() / 3600
+        if duration <= 0:
+            return 0
+    except ValueError:
+        return 0
+
+    if service_type == 'cab':
+        base_fare, per_km = 500, 20
+        num_cabs = math.ceil(passengers / 7) if passengers else 1
+        return num_cabs * (base_fare + (distance * per_km)) if distance and passengers else 0
+    elif service_type == 'traveller':
+        base_fare, per_km = 1000, 30
+        return base_fare + (distance * per_km) if distance and passengers and passengers <= 22 else 0
+    elif service_type == 'bus':
+        base_fare, per_km = 12500, 80
+        return base_fare + (distance * per_km) if distance and passengers and passengers <= 50 else 0
+    elif service_type == 'self-rental':
+        base_fare = 120
+        hourly_rate = 150 if vehicle_type == 'car' else 80
+        return base_fare + (hourly_rate * duration) if duration > 0 else 0
+    return 0
+
+# Recommendation Logic
+def get_recommendation(service_type, passengers):
+    if service_type == 'cab':
+        num_cabs = math.ceil(passengers / 7) if passengers else 1
+        return f"{num_cabs} Cab{'s' if num_cabs > 1 else ''}"
+    elif service_type == 'traveller':
+        return "1 Traveller" if passengers <= 22 else "Multiple Travellers Required"
+    elif service_type == 'bus':
+        return "1 Bus" if passengers <= 50 else "Multiple Buses Required"
+    elif service_type == 'self-rental':
+        return "N/A"
+    return "Invalid"
+
+# Get User Bookings
+@app.route('/bookings/<int:user_id>', methods=['GET'])
+def get_bookings(user_id):
+    if not User.query.get(user_id):
+        return jsonify({'message': 'User not found'}), 404
+
+    bookings = Booking.query.filter_by(user_id=user_id).all()
+    return jsonify([{
+        'id': b.id,
+        'service': b.service_type,
+        'pickup_date': b.pickup_date,
+        'pickup_time': b.pickup_time,
+        'dropoff_date': b.dropoff_date or 'N/A',
+        'dropoff_time': b.dropoff_time or 'N/A',
+        'status': b.status,
+        'fare': b.fare,
+        'pickup_location': b.pickup_location,
+        'dropoff_location': b.dropoff_location,
+        'booking_date': b.booking_date.isoformat(),
+        'token': b.token  
+    } for b in bookings]), 200
+
+# Logout Route
+@app.route('/logout', methods=['POST'])
+def logout():
+    return jsonify({'message': 'Logged out successfully'}), 200
+
+if __name__ == '__main__':
+    if not os.path.exists('static/uploads'):
+        os.makedirs('static/uploads')
+    app.run(debug=True)
