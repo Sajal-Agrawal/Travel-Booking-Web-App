@@ -1,1 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signup - AI Travel Agency</title>
+    <link rel="stylesheet" href="assets/signup.css">
+</head>
+<body>
+    <section class="signup-section">
+        <div class="signup-container">
+            <h2>Create an Account</h2>
+            <form id="signupForm">
+                <label for="name">Full Name</label>
+                <input type="text" id="name" required placeholder="Enter your full name">
+                
+                <label for="phone">Phone Number</label>
+                <input type="tel" id="phone" required placeholder="Enter your phone number">
 
+                <label for="email">Email Address</label>
+                <input type="email" id="email" required placeholder="Enter your email">
+
+                <label for="password">Password</label>
+                <input type="password" id="password" required placeholder="Enter a new password">
+                
+                <label for="profilePicture">Profile Picture (Optional)</label>
+                <input type="file" id="profilePicture" accept="image/*">
+
+                <button type="submit">Sign Up</button>
+            </form>
+            <p>Already have an account? <a href="signin.html">Sign In</a></p>
+        </div>
+    </section>
+
+    <script>
+        document.getElementById("signupForm").addEventListener("submit", function(e) {
+            e.preventDefault();
+
+            let formData = new FormData();
+            formData.append('name', document.getElementById("name").value);
+            formData.append('phone', document.getElementById("phone").value);
+            formData.append('email', document.getElementById("email").value);
+            formData.append('password', document.getElementById("password").value);
+            formData.append('profilePicture', document.getElementById("profilePicture").files[0]);
+
+            fetch('http://localhost:5000/signup', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Signup failed');
+                return response.json();
+            })
+            .then(data => {
+                alert(data.message);
+                localStorage.setItem('user_id', data.user_id);
+                window.location.href = "signin.html";
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Signup failed. Please try again.');
+            });
+        });
+    </script>
+</body>
+</html>
