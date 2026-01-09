@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Profile - AI Travel Agency</title>
+    <link rel="stylesheet" href="../assets/edit.css">
+</head>
+<body>
+    <section class="profile-section">
+        <div class="profile-container">
+            <h2>Edit Profile</h2>
+            <form id="editProfileForm">
+                <label for="name">Full Name:</label>
+                <input type="text" id="name" required>
+
+                <label for="phone">Phone Number:</label>
+                <input type="text" id="phone" required>
+
+                <label for="email">Email:</label>
+                <input type="email" id="email" required>
+
+                <label for="profilePic">Profile Picture:</label>
+                <input type="file" id="profilePic" accept="image/*">
+                
+                <img id="previewPic" src="../assets/default-avatar.png" width="80" style="display: none; border-radius: 50%; margin-top: 10px;">
+
+                <button type="submit">Save Changes</button>
+            </form>
+        </div>
+    </section>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let userId = localStorage.getItem("user_id");
+            if (!userId) {
+                alert("Please sign in to edit your profile.");
+                window.location.href = "../signin.html";
+                return;
+            }
+
+            fetch('http://localhost:5000/signin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: localStorage.getItem("email") })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.user) {
+                    document.getElementById("name").value = data.user.name;
+                    document.getElementById("phone").value = data.user.phone;
+                    document.getElementById("email").value = data.user.email;
+                    if (data.user.profilePic) {
+                        document.getElementById("previewPic").src = data.user.profilePic;
+                        document.getElementById("previewPic").style.display = "block";
+                    }
+                }
+            });
+
+            document.getElementById("editProfileForm").addEventListener("submit", function(e) {
+                e.preventDefault();
+
+                let formData = new FormData();
+                formData.append('name', document.getElementById("name").value);
+                formData.append('phone', document.getElementById("phone").value);
+                formData.append('email', document.getElementById("email").value);
+                formData.append('profilePic', document.getElementById("profilePic").files[0]);
+
+                fetch('http://localhost:5000/profile/edit', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Profile update failed');
+                    return response.json();
+                })
+                .then(data => {
+                    alert(data.message);
+                    localStorage.setItem("username", data.user.name);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to update profile.');
+                });
+            });
+        });
+    </script>
+</body>
+</html>
