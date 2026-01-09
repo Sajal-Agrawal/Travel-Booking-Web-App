@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Bookings - AI Travel Agency</title>
+    <link rel="stylesheet" href="../assets/edit.css">
+</head>
+<body>
+    <section class="my-bookings-section">
+        <div class="my-bookings-container">
+            <h2>My Bookings</h2>
+            <p>Your booking history will appear here after you book a service.</p>
+            
+            <table id="bookingsTable">
+                <thead>
+                    <tr>
+                        <th>Booking ID</th>
+                        <th>Service</th>
+                        <th>Pickup Date</th>
+                        <th>Drop-off Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+
+            <p id="noBookingsMessage">No bookings yet.</p>
+        </div>
+    </section>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            let userId = localStorage.getItem("user_id");
+            if (!userId) {
+                alert("Please sign in to view your bookings.");
+                window.location.href = "../signin.html";
+                return;
+            }
+
+            fetch(`http://localhost:5000/bookings/${userId}`, {
+                method: 'GET',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => {
+                if (!response.ok) throw new Error('Failed to fetch bookings');
+                return response.json();
+            })
+            .then(bookings => {
+                const bookingsTable = document.getElementById("bookingsTable").getElementsByTagName("tbody")[0];
+                const noBookingsMessage = document.getElementById("noBookingsMessage");
+
+                if (bookings.length > 0) {
+                    noBookingsMessage.style.display = "none";
+                    bookings.forEach(booking => {
+                        const row = bookingsTable.insertRow();
+                        row.innerHTML = `
+                            <td>${booking.id}</td>
+                            <td>${booking.service}</td>
+                            <td>${booking.pickup_date}</td>
+                            <td>${booking.dropoff_date}</td>
+                            <td>${booking.status}</td>
+                        `;
+                    });
+                } else {
+                    bookingsTable.style.display = "none";
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to load bookings.');
+            });
+        });
+    </script>
+</body>
+</html>
