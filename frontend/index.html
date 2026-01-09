@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Travel Agency</title>
+    <link rel="stylesheet" href="assets/styles.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">
+                <img src="assets/images/logo.png" alt="AI Travel">
+            </div>
+            <ul>
+                <li><a href="#">Home</a></li>
+                <li class="dropdown">
+                    <a href="#">Services</a>
+                    <ul class="dropdown-content">
+                        <li><a href="services/cab.html">Cab Service</a></li>
+                        <li><a href="services/traveller.html">Traveller Service</a></li>
+                        <li><a href="services/bus.html">Bus Service</a></li>
+                        <li><a href="services/self-rental.html">Self Rental</a></li>
+                    </ul>
+                </li>
+                <li class="dropdown">
+                    <a href="#">Profile</a>
+                    <ul class="dropdown-content">
+                        <li><a href="profile/edit-profile.html">Edit Profile</a></li>
+                        <li><a href="profile/forgot-password.html">Forgot Password</a></li>
+                        <li><a href="profile/My-booking.html">My Bookings</a></li>
+                    </ul>
+                </li>
+                <li class="dropdown" id="auth-links">
+                    <a href="#">Signin/Signup</a>
+                    <ul class="dropdown-content">
+                        <li><a href="signin.html">Signin</a></li>
+                        <li><a href="signup.html">Signup</a></li>
+                    </ul>
+                </li>
+                <li id="user-info" style="display: none;">
+                    <span>Welcome, <span id="username"></span></span>
+                    <a href="#" id="logout">Logout</a>
+                </li>
+            </ul>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <h1>Welcome to AI Travel Agency</h1>
+        <p>Your gateway to unforgettable journeys</p>
+        <p id="hero-message"></p>
+        <button onclick="window.location.href='services/cab.html'">Book Now</button>
+    </section>
+
+    <footer>
+        <p>© <span id="current-year"></span> AI Travel Agency. All rights reserved.</p>
+    </footer>
+
+    <script>
+        let isLoggedIn = localStorage.getItem("isLoggedIn");
+        if (isLoggedIn === "true") {
+            document.getElementById("auth-links").style.display = "none";
+            document.getElementById("user-info").style.display = "inline";
+            document.getElementById("username").textContent = localStorage.getItem("username");
+            document.getElementById("hero-message").textContent = `Hello, ${localStorage.getItem("username")}! Ready to book your next adventure?`;
+        } else {
+            document.getElementById("auth-links").style.display = "inline";
+            document.getElementById("user-info").style.display = "none";
+        }
+
+        document.getElementById("logout").addEventListener("click", function(e) {
+            e.preventDefault();
+            fetch('http://localhost:5000/logout', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    localStorage.clear();
+                    window.location.href = "signin.html";
+                });
+        });
+
+        document.getElementById("current-year").textContent = new Date().getFullYear();
+    </script>
+</body>
+</html>
